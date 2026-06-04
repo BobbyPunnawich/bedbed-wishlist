@@ -71,21 +71,23 @@ export default function CategoryCard({
           </span>
         </button>
 
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           {pending.length > 0 && (
             <button
               onClick={spinRandom}
               title="Pick random"
-              className="p-2.5 rounded-xl hover:bg-purple-100 text-purple-300 hover:text-purple-500 transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-100 text-purple-500 hover:bg-purple-200 active:scale-95 transition-all"
             >
-              <Shuffle className="w-4 h-4" />
+              <Shuffle className="w-3.5 h-3.5" />
+              <span className="text-xs font-semibold">Random</span>
             </button>
           )}
           <button
             onClick={() => setShowAdd(!showAdd)}
-            className="p-2.5 rounded-xl hover:bg-purple-100 text-purple-300 hover:text-purple-500 transition-colors"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-400 text-white hover:bg-purple-500 active:scale-95 transition-all shadow-sm"
           >
             <Plus className="w-4 h-4" />
+            <span className="text-xs font-semibold">Add</span>
           </button>
           <button
             onClick={() => onDeleteCategory(category.id)}
