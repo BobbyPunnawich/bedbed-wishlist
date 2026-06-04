@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Settings, ListChecks } from "lucide-react";
+import { Plus, Settings, ListChecks, X } from "lucide-react";
 import { User, Category, ChecklistItem } from "@/lib/types";
 import Avatar from "@/components/Avatar";
 import CategoryCard from "@/components/CategoryCard";
@@ -155,6 +155,39 @@ export default function Home() {
     setItems((prev) => prev.filter((i) => i.id !== id));
   };
 
+  const handleEditItem = async (id: number, title: string) => {
+    const res = await fetch(`/api/items/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    const updated = await res.json();
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, title: updated.title } : i)));
+  };
+
+  const handleToggleFavorite = async (itemId: number) => {
+    const item = items.find((i) => i.id === itemId);
+    if (!item) return;
+    const isFav = item.favorited_by?.includes(activeUserId);
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === itemId
+          ? {
+              ...i,
+              favorited_by: isFav
+                ? i.favorited_by.filter((uid) => uid !== activeUserId)
+                : [...(i.favorited_by || []), activeUserId],
+            }
+          : i
+      )
+    );
+    await fetch("/api/favorites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_id: itemId, user_id: activeUserId }),
+    });
+  };
+
   const handleSaveProfile = async (nickname: string, avatar_url: string, tagline?: string) => {
     if (!editingUser) return;
     const res = await fetch("/api/users", {
@@ -298,60 +331,90 @@ export default function Home() {
             onToggleItem={handleToggleItem}
             onDeleteItem={handleDeleteItem}
             onDeleteCategory={handleDeleteCategory}
+            onEditItem={handleEditItem}
+            onFavoriteItem={handleToggleFavorite}
           />
         ))}
 
-        {/* New category inline form */}
-        {showNewCategory && (
-          <div className="bg-white rounded-3xl border border-purple-200 p-5 space-y-3 shadow-sm">
-            <h3 className="font-bold text-purple-900 text-sm">New Category</h3>
-            <div className="flex gap-2">
-              <select
-                value={newCategoryEmoji}
-                onChange={(e) => setNewCategoryEmoji(e.target.value)}
-                className="px-2 py-2.5 rounded-2xl border border-purple-200 text-base bg-purple-50 focus:outline-none focus:ring-2 focus:ring-purple-400"
+        {/* spacer so FAB doesn't cover last card */}
+        <div className="h-4" />
+      </main>
+
+      {/* Floating action button */}
+      <button
+        onClick={() => setShowNewCategory(true)}
+        className="fixed bottom-6 right-4 flex items-center gap-2 bg-purple-400 text-white px-5 py-3.5 rounded-full shadow-lg hover:bg-purple-500 transition-all hover:scale-105 active:scale-95 z-20"
+      >
+        <Plus className="w-5 h-5" />
+        <span className="font-semibold">New Category</span>
+      </button>
+
+      {/* New category — bottom sheet */}
+      {showNewCategory && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40"
+            onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }}
+          />
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-xl p-6 space-y-4 max-w-2xl mx-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-purple-900">New Category</h3>
+              <button
+                onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }}
+                className="p-1.5 rounded-xl hover:bg-purple-50 text-purple-400"
               >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-semibold text-purple-400 uppercase tracking-wider">Emoji</label>
+              <div className="grid grid-cols-8 gap-2">
                 {CATEGORY_EMOJIS.map((e) => (
-                  <option key={e} value={e}>{e}</option>
+                  <button
+                    key={e}
+                    onClick={() => setNewCategoryEmoji(e)}
+                    className={`aspect-square rounded-xl flex items-center justify-center text-xl transition-all ${
+                      newCategoryEmoji === e
+                        ? "bg-purple-400 scale-110 shadow-sm"
+                        : "bg-purple-50 hover:bg-purple-100 active:scale-95"
+                    }`}
+                  >
+                    {e}
+                  </button>
                 ))}
-              </select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-purple-400 uppercase tracking-wider">Name</label>
               <input
                 value={newCategoryName}
                 onChange={(e) => setNewCategoryName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
                 placeholder="e.g. Foodie Adventures"
-                className="flex-1 px-4 py-2.5 rounded-2xl border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 text-sm text-purple-900"
+                className="w-full px-4 py-3 rounded-2xl border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 text-purple-900"
                 autoFocus
               />
             </div>
-            <div className="flex gap-2">
+
+            <div className="flex gap-3 pb-safe">
               <button
-                onClick={() => setShowNewCategory(false)}
-                className="flex-1 py-2.5 rounded-2xl border border-purple-200 text-purple-500 text-sm font-semibold hover:bg-purple-50 transition-colors"
+                onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }}
+                className="flex-1 py-3.5 rounded-2xl border border-purple-200 text-purple-500 font-semibold hover:bg-purple-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddCategory}
                 disabled={addingCategory || !newCategoryName.trim()}
-                className="flex-1 py-2.5 rounded-2xl bg-purple-400 text-white text-sm font-semibold hover:bg-purple-500 transition-colors disabled:opacity-50"
+                className="flex-1 py-3.5 rounded-2xl bg-purple-400 text-white font-semibold hover:bg-purple-500 transition-colors disabled:opacity-50"
               >
                 {addingCategory ? "Creating..." : "Create"}
               </button>
             </div>
           </div>
-        )}
-      </main>
-
-      {/* Floating action button */}
-      {!showNewCategory && (
-        <button
-          onClick={() => setShowNewCategory(true)}
-          className="fixed bottom-6 right-4 flex items-center gap-2 bg-purple-400 text-white px-5 py-3.5 rounded-full shadow-lg hover:bg-purple-500 transition-all hover:scale-105 active:scale-95"
-        >
-          <Plus className="w-5 h-5" />
-          <span className="font-semibold text-sm">New Category</span>
-        </button>
+        </>
       )}
 
       {/* Profile modal */}

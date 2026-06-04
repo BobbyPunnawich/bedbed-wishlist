@@ -10,20 +10,30 @@ export async function GET(req: Request) {
       ? await sql`
           SELECT ci.*,
             uc.nickname as created_by_nickname, uc.avatar_url as created_by_avatar,
-            ux.nickname as completed_by_nickname, ux.avatar_url as completed_by_avatar
+            ux.nickname as completed_by_nickname, ux.avatar_url as completed_by_avatar,
+            COALESCE(array_agg(DISTINCT f.user_id) FILTER (WHERE f.user_id IS NOT NULL), ARRAY[]::integer[]) as favorited_by,
+            COUNT(DISTINCT co.id)::integer as comment_count
           FROM checklist_items ci
           LEFT JOIN users uc ON ci.created_by = uc.id
           LEFT JOIN users ux ON ci.completed_by = ux.id
+          LEFT JOIN item_favorites f ON ci.id = f.item_id
+          LEFT JOIN item_comments co ON ci.id = co.item_id
           WHERE ci.category_id = ${categoryId}
+          GROUP BY ci.id, uc.nickname, uc.avatar_url, ux.nickname, ux.avatar_url
           ORDER BY ci.created_at ASC
         `
       : await sql`
           SELECT ci.*,
             uc.nickname as created_by_nickname, uc.avatar_url as created_by_avatar,
-            ux.nickname as completed_by_nickname, ux.avatar_url as completed_by_avatar
+            ux.nickname as completed_by_nickname, ux.avatar_url as completed_by_avatar,
+            COALESCE(array_agg(DISTINCT f.user_id) FILTER (WHERE f.user_id IS NOT NULL), ARRAY[]::integer[]) as favorited_by,
+            COUNT(DISTINCT co.id)::integer as comment_count
           FROM checklist_items ci
           LEFT JOIN users uc ON ci.created_by = uc.id
           LEFT JOIN users ux ON ci.completed_by = ux.id
+          LEFT JOIN item_favorites f ON ci.id = f.item_id
+          LEFT JOIN item_comments co ON ci.id = co.item_id
+          GROUP BY ci.id, uc.nickname, uc.avatar_url, ux.nickname, ux.avatar_url
           ORDER BY ci.created_at ASC
         `;
 

@@ -28,4 +28,16 @@ export interface ChecklistItem {
   created_by_avatar?: string;
   completed_by_nickname?: string;
   completed_by_avatar?: string;
+  favorited_by: number[];
+  comment_count: number;
+}
+
+export interface ItemComment {
+  id: number;
+  item_id: number;
+  user_id: number;
+  content: string;
+  created_at: string;
+  user_nickname?: string;
+  user_avatar?: string | null;
 }

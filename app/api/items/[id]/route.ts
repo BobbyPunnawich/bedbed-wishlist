@@ -5,8 +5,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   try {
     const { id } = await params;
     const body = await req.json();
-    const { is_completed, completed_by, memory_image_url } = body;
 
+    if ("title" in body) {
+      const [item] = await sql`
+        UPDATE checklist_items SET title = ${body.title} WHERE id = ${id} RETURNING *
+      `;
+      return NextResponse.json(item);
+    }
+
+    const { is_completed, completed_by, memory_image_url } = body;
     const [item] = await sql`
       UPDATE checklist_items
       SET

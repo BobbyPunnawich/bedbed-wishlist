@@ -42,6 +42,25 @@ export async function initDb() {
 
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS tagline TEXT`;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS item_favorites (
+      item_id INTEGER REFERENCES checklist_items(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (item_id, user_id)
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS item_comments (
+      id SERIAL PRIMARY KEY,
+      item_id INTEGER REFERENCES checklist_items(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+
   // Seed default users if none exist
   const existingUsers = await sql`SELECT id FROM users LIMIT 1`;
   if (existingUsers.length === 0) {

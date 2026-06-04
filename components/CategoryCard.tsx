@@ -13,8 +13,9 @@ interface CategoryCardProps {
   onToggleItem: (item: ChecklistItem) => void;
   onDeleteItem: (id: number) => void;
   onDeleteCategory: (id: number) => void;
+  onEditItem: (id: number, title: string) => Promise<void>;
+  onFavoriteItem: (itemId: number) => Promise<void>;
 }
-
 
 export default function CategoryCard({
   category,
@@ -24,6 +25,8 @@ export default function CategoryCard({
   onToggleItem,
   onDeleteItem,
   onDeleteCategory,
+  onEditItem,
+  onFavoriteItem,
 }: CategoryCardProps) {
   const [newTitle, setNewTitle] = useState("");
   const [adding, setAdding] = useState(false);
@@ -51,7 +54,7 @@ export default function CategoryCard({
   return (
     <div className="bg-white rounded-3xl border border-purple-100 shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 bg-purple-50/60">
+      <div className="flex items-center justify-between px-4 py-3.5 bg-purple-50/60">
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="flex items-center gap-2.5 flex-1 text-left min-w-0"
@@ -73,22 +76,22 @@ export default function CategoryCard({
             <button
               onClick={spinRandom}
               title="Pick random"
-              className="p-2 rounded-xl hover:bg-purple-100 text-purple-300 hover:text-purple-500 transition-colors"
+              className="p-2.5 rounded-xl hover:bg-purple-100 text-purple-300 hover:text-purple-500 transition-colors"
             >
-              <Shuffle className="w-3.5 h-3.5" />
+              <Shuffle className="w-4 h-4" />
             </button>
           )}
           <button
             onClick={() => setShowAdd(!showAdd)}
-            className="p-2 rounded-xl hover:bg-purple-100 text-purple-300 hover:text-purple-500 transition-colors"
+            className="p-2.5 rounded-xl hover:bg-purple-100 text-purple-300 hover:text-purple-500 transition-colors"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-4 h-4" />
           </button>
           <button
             onClick={() => onDeleteCategory(category.id)}
-            className="p-2 rounded-xl hover:bg-red-50 text-red-200 hover:text-red-400 transition-colors"
+            className="p-2.5 rounded-xl hover:bg-red-50 text-red-200 hover:text-red-400 transition-colors"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -100,8 +103,8 @@ export default function CategoryCard({
             <span>🎲</span>
             <span className="font-medium text-sm">{spinResult.emoji} {spinResult.title}</span>
           </div>
-          <button onClick={() => setSpinResult(null)} className="text-purple-200 hover:text-white">
-            <X className="w-3.5 h-3.5" />
+          <button onClick={() => setSpinResult(null)} className="text-purple-200 hover:text-white p-1">
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}
@@ -109,23 +112,28 @@ export default function CategoryCard({
       {/* Add item form */}
       {showAdd && (
         <div className="mx-4 mt-3 p-3 bg-purple-50 rounded-2xl space-y-2">
+          <input
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAddItem()}
+            placeholder="Activity name..."
+            className="w-full px-3 py-2.5 rounded-xl border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-300 text-purple-800 bg-white"
+          />
           <div className="flex gap-2">
-            <input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddItem()}
-              placeholder="Item name..."
-              className="flex-1 px-3 py-2 rounded-xl border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-300 text-sm text-purple-800 bg-white"
-              autoFocus
-            />
+            <button
+              onClick={() => { setShowAdd(false); setNewTitle(""); }}
+              className="flex-1 py-2.5 rounded-xl border border-purple-200 text-purple-500 font-semibold hover:bg-purple-100 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddItem}
+              disabled={adding || !newTitle.trim()}
+              className="flex-1 py-2.5 rounded-xl bg-purple-400 text-white font-semibold hover:bg-purple-500 transition-colors disabled:opacity-50"
+            >
+              {adding ? "Adding..." : "Add"}
+            </button>
           </div>
-          <button
-            onClick={handleAddItem}
-            disabled={adding || !newTitle.trim()}
-            className="w-full py-2 rounded-xl bg-purple-400 text-white text-sm font-semibold hover:bg-purple-500 transition-colors disabled:opacity-50"
-          >
-            {adding ? "Adding..." : "Add"}
-          </button>
         </div>
       )}
 
@@ -133,11 +141,19 @@ export default function CategoryCard({
       {!collapsed && (
         <div className="px-3 pb-3 mt-2 space-y-0.5">
           {pending.length === 0 && completed.length === 0 && (
-            <p className="text-center text-sm text-purple-300 py-4">No items yet</p>
+            <p className="text-center text-purple-300 py-4">No items yet</p>
           )}
 
           {pending.map((item) => (
-            <ChecklistItemRow key={item.id} item={item} onToggle={onToggleItem} onDelete={onDeleteItem} />
+            <ChecklistItemRow
+              key={item.id}
+              item={item}
+              activeUser={activeUser}
+              onToggle={onToggleItem}
+              onDelete={onDeleteItem}
+              onEdit={onEditItem}
+              onFavorite={onFavoriteItem}
+            />
           ))}
 
           {completed.length > 0 && (
@@ -148,7 +164,15 @@ export default function CategoryCard({
                 <div className="flex-1 h-px bg-purple-100" />
               </div>
               {completed.map((item) => (
-                <ChecklistItemRow key={item.id} item={item} onToggle={onToggleItem} onDelete={onDeleteItem} />
+                <ChecklistItemRow
+                  key={item.id}
+                  item={item}
+                  activeUser={activeUser}
+                  onToggle={onToggleItem}
+                  onDelete={onDeleteItem}
+                  onEdit={onEditItem}
+                  onFavorite={onFavoriteItem}
+                />
               ))}
             </>
           )}
