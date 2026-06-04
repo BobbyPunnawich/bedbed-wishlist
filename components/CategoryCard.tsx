@@ -187,6 +187,8 @@ export default function CategoryCard({
                   onDelete={onDeleteItem}
                   onEdit={onEditItem}
                   onFavorite={onFavoriteItem}
+                  onUpdatePlannedDate={onUpdatePlannedDate}
+                  onUpdateCompletedAt={onUpdateCompletedAt}
                 />
               ))}
             </>
