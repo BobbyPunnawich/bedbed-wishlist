@@ -1,15 +1,18 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Settings, ListChecks, X } from "lucide-react";
+import { Plus, Settings, ListChecks, X, CalendarDays } from "lucide-react";
 import { User, Category, ChecklistItem } from "@/lib/types";
 import Avatar from "@/components/Avatar";
 import CategoryCard from "@/components/CategoryCard";
 import ProfileModal from "@/components/ProfileModal";
 import MemoryModal from "@/components/MemoryModal";
+import CalendarView from "@/components/CalendarView";
 import { useConfetti } from "@/components/ConfettiEffect";
 
 const CATEGORY_EMOJIS = ["✨", "🍽️", "🚗", "🏠", "🎬", "🏖️", "🎡", "🌿", "🍦", "🎮", "📸", "🌅", "💃", "🎵", "🛍️", "🍕", "☕", "🎭", "🏔️", "✈️", "🎪", "🌸", "🎨", "🏋️", "🎯"];
+
+type Page = "checklist" | "calendar";
 
 export default function Home() {
   const [users, setUsers] = useState<User[]>([]);
@@ -18,10 +21,10 @@ export default function Home() {
   const [activeUserId, setActiveUserId] = useState<number>(1);
   const [loading, setLoading] = useState(true);
   const [dbReady, setDbReady] = useState(false);
+  const [currentPage, setCurrentPage] = useState<Page>("checklist");
 
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-
   const [pendingToggleItem, setPendingToggleItem] = useState<ChecklistItem | null>(null);
 
   const [showNewCategory, setShowNewCategory] = useState(false);
@@ -35,29 +38,20 @@ export default function Home() {
   const mimiUser = users[0];
   const bedUser = users[1];
 
-  // Initialize DB then load data
   useEffect(() => {
     (async () => {
-      try {
-        await fetch("/api/init", { method: "POST" });
-        setDbReady(true);
-      } catch {
-        setDbReady(true);
-      }
+      try { await fetch("/api/init", { method: "POST" }); } catch {}
+      setDbReady(true);
     })();
   }, []);
 
   const loadData = useCallback(async () => {
     try {
       const [usersRes, catsRes, itemsRes] = await Promise.all([
-        fetch("/api/users"),
-        fetch("/api/categories"),
-        fetch("/api/items"),
+        fetch("/api/users"), fetch("/api/categories"), fetch("/api/items"),
       ]);
       const [usersData, catsData, itemsData] = await Promise.all([
-        usersRes.json(),
-        catsRes.json(),
-        itemsRes.json(),
+        usersRes.json(), catsRes.json(), itemsRes.json(),
       ]);
       setUsers(usersData);
       setCategories(catsData);
@@ -70,9 +64,7 @@ export default function Home() {
     }
   }, []);
 
-  useEffect(() => {
-    if (dbReady) loadData();
-  }, [dbReady, loadData]);
+  useEffect(() => { if (dbReady) loadData(); }, [dbReady, loadData]);
 
   const totalPlanned = items.filter((i) => !i.is_completed).length;
   const totalCompleted = items.filter((i) => i.is_completed).length;
@@ -95,11 +87,7 @@ export default function Home() {
 
   const handleDeleteCategory = async (id: number) => {
     if (!confirm("Delete this category and all its activities?")) return;
-    await fetch("/api/categories", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
+    await fetch("/api/categories", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
     setCategories((prev) => prev.filter((c) => c.id !== id));
     setItems((prev) => prev.filter((i) => i.category_id !== id));
   };
@@ -113,6 +101,8 @@ export default function Home() {
     const newItem = await res.json();
     newItem.created_by_nickname = activeUser?.nickname;
     newItem.created_by_avatar = activeUser?.avatar_url;
+    newItem.favorited_by = [];
+    newItem.comment_count = 0;
     setItems((prev) => [...prev, newItem]);
   };
 
@@ -128,15 +118,14 @@ export default function Home() {
     const res = await fetch(`/api/items/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        is_completed: completing,
-        completed_by: completing ? activeUserId : null,
-        memory_image_url: memoryUrl,
-      }),
+      body: JSON.stringify({ is_completed: completing, completed_by: completing ? activeUserId : null, memory_image_url: memoryUrl }),
     });
     const updated = await res.json();
     updated.created_by_nickname = item.created_by_nickname;
     updated.created_by_avatar = item.created_by_avatar;
+    updated.favorited_by = item.favorited_by;
+    updated.comment_count = item.comment_count;
+    updated.planned_date = item.planned_date;
     if (completing) {
       updated.completed_by_nickname = activeUser?.nickname;
       updated.completed_by_avatar = activeUser?.avatar_url;
@@ -147,19 +136,13 @@ export default function Home() {
   };
 
   const handleDeleteItem = async (id: number) => {
-    await fetch("/api/items", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
+    await fetch("/api/items", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
     setItems((prev) => prev.filter((i) => i.id !== id));
   };
 
   const handleEditItem = async (id: number, title: string) => {
     const res = await fetch(`/api/items/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }),
     });
     const updated = await res.json();
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, title: updated.title } : i)));
@@ -172,27 +155,36 @@ export default function Home() {
     setItems((prev) =>
       prev.map((i) =>
         i.id === itemId
-          ? {
-              ...i,
-              favorited_by: isFav
-                ? i.favorited_by.filter((uid) => uid !== activeUserId)
-                : [...(i.favorited_by || []), activeUserId],
-            }
+          ? { ...i, favorited_by: isFav ? i.favorited_by.filter((uid) => uid !== activeUserId) : [...(i.favorited_by || []), activeUserId] }
           : i
       )
     );
     await fetch("/api/favorites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ item_id: itemId, user_id: activeUserId }),
     });
+  };
+
+  const handleUpdatePlannedDate = async (id: number, date: string | null) => {
+    const res = await fetch(`/api/items/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planned_date: date }),
+    });
+    const updated = await res.json();
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, planned_date: updated.planned_date } : i)));
+  };
+
+  const handleUpdateCompletedAt = async (id: number, date: string) => {
+    const res = await fetch(`/api/items/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ completed_at: date }),
+    });
+    const updated = await res.json();
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, completed_at: updated.completed_at } : i)));
   };
 
   const handleSaveProfile = async (nickname: string, avatar_url: string, tagline?: string) => {
     if (!editingUser) return;
     const res = await fetch("/api/users", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: editingUser.id, nickname, avatar_url, tagline }),
     });
     const updated = await res.json();
@@ -204,7 +196,7 @@ export default function Home() {
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-purple-50 flex items-center justify-center">
         <div className="text-center space-y-3">
           <div className="text-3xl animate-pulse">✨</div>
-          <p className="text-purple-400 font-medium text-sm">Loading...</p>
+          <p className="text-purple-400 font-medium">Loading...</p>
         </div>
       </div>
     );
@@ -220,21 +212,18 @@ export default function Home() {
               <ListChecks className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h1 className="font-semibold text-purple-800 text-base leading-none">Checklist</h1>
-              <p className="text-xs text-purple-400 leading-none">shared checklist</p>
+              <h1 className="font-semibold text-purple-800 leading-none">Checklist</h1>
+              <p className="text-xs text-purple-400 leading-none">shared with love 💜</p>
             </div>
           </div>
 
-          {/* User switcher */}
           <div className="flex items-center gap-2">
             {users.map((user) => (
               <button
                 key={user.id}
                 onClick={() => setActiveUserId(user.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all text-sm font-medium ${
-                  activeUserId === user.id
-                    ? "bg-purple-400 text-white shadow-sm"
-                    : "bg-purple-100 text-purple-500 hover:bg-purple-200"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all font-medium ${
+                  activeUserId === user.id ? "bg-purple-400 text-white shadow-sm" : "bg-purple-100 text-purple-500 hover:bg-purple-200"
                 }`}
               >
                 <Avatar url={user.avatar_url} nickname={user.nickname} size="sm" />
@@ -242,10 +231,7 @@ export default function Home() {
               </button>
             ))}
             <button
-              onClick={() => {
-                const u = users.find((u) => u.id === activeUserId);
-                if (u) { setEditingUser(u); setShowProfileModal(true); }
-              }}
+              onClick={() => { const u = users.find((u) => u.id === activeUserId); if (u) { setEditingUser(u); setShowProfileModal(true); } }}
               className="p-2 rounded-full hover:bg-purple-50 text-purple-400 transition-colors"
             >
               <Settings className="w-4 h-4" />
@@ -254,120 +240,149 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 pb-28 space-y-4 pt-4">
-        {/* Status bubbles */}
-        {(mimiUser?.tagline || bedUser?.tagline) && (
-          <div className="space-y-2 pt-1">
-            {mimiUser?.tagline && (
-              <div className="flex items-end gap-2">
-                <Avatar url={mimiUser.avatar_url} nickname={mimiUser.nickname} size="md" />
-                <div className="relative">
-                  <div className="absolute bottom-3 -left-1 w-2.5 h-2.5 bg-purple-100 rotate-45" />
-                  <div className="relative bg-purple-100 rounded-2xl rounded-bl-none px-3.5 py-2 z-10 max-w-[260px]">
-                    <p className="text-sm text-purple-700 leading-snug">{mimiUser.tagline}</p>
+      {/* Page content */}
+      {currentPage === "checklist" ? (
+        <main className="max-w-2xl mx-auto px-4 pb-36 space-y-4 pt-4">
+          {/* Status bubbles */}
+          {(mimiUser?.tagline || bedUser?.tagline) && (
+            <div className="space-y-2 pt-1">
+              {mimiUser?.tagline && (
+                <div className="flex items-end gap-2">
+                  <Avatar url={mimiUser.avatar_url} nickname={mimiUser.nickname} size="md" />
+                  <div className="relative">
+                    <div className="absolute bottom-3 -left-1 w-2.5 h-2.5 bg-purple-100 rotate-45" />
+                    <div className="relative bg-purple-100 rounded-2xl rounded-bl-none px-3.5 py-2 z-10 max-w-[260px]">
+                      <p className="text-sm text-purple-700 leading-snug">{mimiUser.tagline}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-            {bedUser?.tagline && (
-              <div className="flex items-end gap-2 justify-end">
-                <div className="relative">
-                  <div className="absolute bottom-3 -right-1 w-2.5 h-2.5 bg-purple-400 rotate-45" />
-                  <div className="relative bg-purple-400 rounded-2xl rounded-br-none px-3.5 py-2 z-10 max-w-[260px]">
-                    <p className="text-sm text-white leading-snug">{bedUser.tagline}</p>
+              )}
+              {bedUser?.tagline && (
+                <div className="flex items-end gap-2 justify-end">
+                  <div className="relative">
+                    <div className="absolute bottom-3 -right-1 w-2.5 h-2.5 bg-purple-400 rotate-45" />
+                    <div className="relative bg-purple-400 rounded-2xl rounded-br-none px-3.5 py-2 z-10 max-w-[260px]">
+                      <p className="text-sm text-white leading-snug">{bedUser.tagline}</p>
+                    </div>
                   </div>
+                  <Avatar url={bedUser.avatar_url} nickname={bedUser.nickname} size="md" />
                 </div>
-                <Avatar url={bedUser.avatar_url} nickname={bedUser.nickname} size="md" />
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
 
-        {/* Stats Banner */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-white rounded-2xl border border-purple-100 p-4 flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-100 rounded-2xl flex items-center justify-center text-xl">📋</div>
-            <div>
-              <p className="text-2xl font-bold text-purple-700">{totalPlanned}</p>
-              <p className="text-xs text-purple-400 font-medium">Planned</p>
+          {/* Stats */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded-2xl border border-purple-100 p-4 flex items-center gap-3">
+              <div className="w-10 h-10 bg-purple-100 rounded-2xl flex items-center justify-center text-xl">📋</div>
+              <div>
+                <p className="text-2xl font-bold text-purple-700">{totalPlanned}</p>
+                <p className="text-xs text-purple-400 font-medium">Planned</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-purple-100 p-4 flex items-center gap-3">
+              <div className="w-10 h-10 bg-purple-100 rounded-2xl flex items-center justify-center text-xl">✅</div>
+              <div>
+                <p className="text-2xl font-bold text-purple-700">{totalCompleted}</p>
+                <p className="text-xs text-purple-400 font-medium">Completed</p>
+              </div>
             </div>
           </div>
-          <div className="bg-white rounded-2xl border border-purple-100 p-4 flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-100 rounded-2xl flex items-center justify-center text-xl">✅</div>
-            <div>
-              <p className="text-2xl font-bold text-purple-700">{totalCompleted}</p>
-              <p className="text-xs text-purple-400 font-medium">Completed</p>
+
+          {/* Active user indicator */}
+          {activeUser && (
+            <div className="flex items-center gap-2 px-1">
+              <Avatar url={activeUser.avatar_url} nickname={activeUser.nickname} size="sm" />
+              <p className="text-xs text-purple-400">
+                Adding as <span className="font-semibold text-purple-600">{activeUser.nickname}</span>
+              </p>
             </div>
-          </div>
+          )}
+
+          {categories.length === 0 && (
+            <div className="text-center py-12 space-y-2">
+              <div className="text-4xl">✨</div>
+              <p className="text-purple-500 font-medium">No categories yet</p>
+              <p className="text-purple-300 text-xs">Tap the button below to get started</p>
+            </div>
+          )}
+
+          {categories.map((category) => (
+            <CategoryCard
+              key={category.id}
+              category={category}
+              items={items.filter((i) => i.category_id === category.id)}
+              activeUser={activeUser}
+              onAddItem={handleAddItem}
+              onToggleItem={handleToggleItem}
+              onDeleteItem={handleDeleteItem}
+              onDeleteCategory={handleDeleteCategory}
+              onEditItem={handleEditItem}
+              onFavoriteItem={handleToggleFavorite}
+              onUpdatePlannedDate={handleUpdatePlannedDate}
+              onUpdateCompletedAt={handleUpdateCompletedAt}
+            />
+          ))}
+
+          <div className="h-2" />
+        </main>
+      ) : (
+        <CalendarView
+          items={items}
+          users={users}
+          activeUser={activeUser}
+          onToggleItem={handleToggleItem}
+        />
+      )}
+
+      {/* Bottom navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white/90 backdrop-blur-md border-t border-purple-100">
+        <div className="max-w-2xl mx-auto flex pb-safe">
+          <button
+            onClick={() => setCurrentPage("checklist")}
+            className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
+              currentPage === "checklist" ? "text-purple-500" : "text-purple-300 hover:text-purple-400"
+            }`}
+          >
+            <ListChecks className="w-5 h-5" />
+            <span className="text-xs font-semibold">Checklist</span>
+          </button>
+          <button
+            onClick={() => setCurrentPage("calendar")}
+            className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
+              currentPage === "calendar" ? "text-purple-500" : "text-purple-300 hover:text-purple-400"
+            }`}
+          >
+            <CalendarDays className="w-5 h-5" />
+            <span className="text-xs font-semibold">Calendar</span>
+          </button>
         </div>
+      </nav>
 
-        {/* Active user indicator */}
-        {activeUser && (
-          <div className="flex items-center gap-2 px-1">
-            <Avatar url={activeUser.avatar_url} nickname={activeUser.nickname} size="sm" />
-            <p className="text-xs text-purple-400">
-              Adding as <span className="font-semibold text-purple-600">{activeUser.nickname}</span>
-            </p>
-          </div>
-        )}
+      {/* FAB — checklist page only, above bottom nav */}
+      {currentPage === "checklist" && (
+        <button
+          onClick={() => setShowNewCategory(true)}
+          className="fixed bottom-[72px] right-4 flex items-center gap-2 bg-purple-400 text-white px-5 py-3.5 rounded-full shadow-lg hover:bg-purple-500 transition-all hover:scale-105 active:scale-95 z-20"
+        >
+          <Plus className="w-5 h-5" />
+          <span className="font-semibold">New Category</span>
+        </button>
+      )}
 
-        {/* Empty state */}
-        {categories.length === 0 && (
-          <div className="text-center py-12 space-y-2">
-            <div className="text-4xl">✨</div>
-            <p className="text-purple-500 font-medium text-sm">No categories yet</p>
-            <p className="text-purple-300 text-xs">Tap the button below to get started</p>
-          </div>
-        )}
-
-        {/* Category cards */}
-        {categories.map((category) => (
-          <CategoryCard
-            key={category.id}
-            category={category}
-            items={items.filter((i) => i.category_id === category.id)}
-            activeUser={activeUser}
-            onAddItem={handleAddItem}
-            onToggleItem={handleToggleItem}
-            onDeleteItem={handleDeleteItem}
-            onDeleteCategory={handleDeleteCategory}
-            onEditItem={handleEditItem}
-            onFavoriteItem={handleToggleFavorite}
-          />
-        ))}
-
-        {/* spacer so FAB doesn't cover last card */}
-        <div className="h-4" />
-      </main>
-
-      {/* Floating action button */}
-      <button
-        onClick={() => setShowNewCategory(true)}
-        className="fixed bottom-6 right-4 flex items-center gap-2 bg-purple-400 text-white px-5 py-3.5 rounded-full shadow-lg hover:bg-purple-500 transition-all hover:scale-105 active:scale-95 z-20"
-      >
-        <Plus className="w-5 h-5" />
-        <span className="font-semibold">New Category</span>
-      </button>
-
-      {/* New category — bottom sheet */}
+      {/* New category bottom sheet */}
       {showNewCategory && (
         <>
-          <div
-            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40"
-            onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }}
-          />
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }} />
           <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-xl p-6 space-y-4 max-w-2xl mx-auto">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-purple-900">New Category</h3>
-              <button
-                onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }}
-                className="p-1.5 rounded-xl hover:bg-purple-50 text-purple-400"
-              >
+              <button onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }} className="p-1.5 rounded-xl hover:bg-purple-50 text-purple-400">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               <label className="text-xs font-semibold text-purple-400 uppercase tracking-wider">Emoji</label>
               <div className="grid grid-cols-8 gap-2">
                 {CATEGORY_EMOJIS.map((e) => (
@@ -375,9 +390,7 @@ export default function Home() {
                     key={e}
                     onClick={() => setNewCategoryEmoji(e)}
                     className={`aspect-square rounded-xl flex items-center justify-center text-xl transition-all ${
-                      newCategoryEmoji === e
-                        ? "bg-purple-400 scale-110 shadow-sm"
-                        : "bg-purple-50 hover:bg-purple-100 active:scale-95"
+                      newCategoryEmoji === e ? "bg-purple-400 scale-110 shadow-sm" : "bg-purple-50 hover:bg-purple-100 active:scale-95"
                     }`}
                   >
                     {e}
@@ -399,17 +412,10 @@ export default function Home() {
             </div>
 
             <div className="flex gap-3 pb-safe">
-              <button
-                onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }}
-                className="flex-1 py-3.5 rounded-2xl border border-purple-200 text-purple-500 font-semibold hover:bg-purple-50 transition-colors"
-              >
+              <button onClick={() => { setShowNewCategory(false); setNewCategoryName(""); }} className="flex-1 py-3.5 rounded-2xl border border-purple-200 text-purple-500 font-semibold hover:bg-purple-50 transition-colors">
                 Cancel
               </button>
-              <button
-                onClick={handleAddCategory}
-                disabled={addingCategory || !newCategoryName.trim()}
-                className="flex-1 py-3.5 rounded-2xl bg-purple-400 text-white font-semibold hover:bg-purple-500 transition-colors disabled:opacity-50"
-              >
+              <button onClick={handleAddCategory} disabled={addingCategory || !newCategoryName.trim()} className="flex-1 py-3.5 rounded-2xl bg-purple-400 text-white font-semibold hover:bg-purple-500 transition-colors disabled:opacity-50">
                 {addingCategory ? "Creating..." : "Create"}
               </button>
             </div>
@@ -417,17 +423,10 @@ export default function Home() {
         </>
       )}
 
-      {/* Profile modal */}
       {showProfileModal && editingUser && (
-        <ProfileModal
-          user={editingUser}
-          onClose={() => setShowProfileModal(false)}
-          onSave={handleSaveProfile}
-          showTagline={true}
-        />
+        <ProfileModal user={editingUser} onClose={() => setShowProfileModal(false)} onSave={handleSaveProfile} showTagline={true} />
       )}
 
-      {/* Memory modal (shown when checking off an item) */}
       {pendingToggleItem && (
         <MemoryModal
           itemTitle={pendingToggleItem.title}

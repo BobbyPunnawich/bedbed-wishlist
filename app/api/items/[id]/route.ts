@@ -13,6 +13,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json(item);
     }
 
+    if ("planned_date" in body) {
+      const [item] = await sql`
+        UPDATE checklist_items SET planned_date = ${body.planned_date ?? null} WHERE id = ${id} RETURNING *
+      `;
+      return NextResponse.json(item);
+    }
+
+    if ("completed_at" in body) {
+      const [item] = await sql`
+        UPDATE checklist_items SET completed_at = ${body.completed_at} WHERE id = ${id} RETURNING *
+      `;
+      return NextResponse.json(item);
+    }
+
     const { is_completed, completed_by, memory_image_url } = body;
     const [item] = await sql`
       UPDATE checklist_items

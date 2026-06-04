@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Trash2, ImageIcon, Heart, MessageCircle, Pencil, Check, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Trash2, ImageIcon, Heart, MessageCircle, Pencil, Check, X, CalendarDays } from "lucide-react";
 import { ChecklistItem, ItemComment, User } from "@/lib/types";
 import Avatar from "./Avatar";
 
@@ -12,6 +12,18 @@ interface ChecklistItemRowProps {
   onDelete: (id: number) => void;
   onEdit: (id: number, title: string) => Promise<void>;
   onFavorite: (itemId: number) => Promise<void>;
+  onUpdatePlannedDate: (id: number, date: string | null) => Promise<void>;
+  onUpdateCompletedAt: (id: number, date: string) => Promise<void>;
+}
+
+function formatDate(dateStr: string) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function toInputDate(isoStr: string) {
+  // Returns YYYY-MM-DD from an ISO or date string
+  return isoStr.split("T")[0];
 }
 
 export default function ChecklistItemRow({
@@ -21,6 +33,8 @@ export default function ChecklistItemRow({
   onDelete,
   onEdit,
   onFavorite,
+  onUpdatePlannedDate,
+  onUpdateCompletedAt,
 }: ChecklistItemRowProps) {
   const [showPhoto, setShowPhoto] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -34,12 +48,14 @@ export default function ChecklistItemRow({
   const [addingComment, setAddingComment] = useState(false);
   const [localCommentCount, setLocalCommentCount] = useState(item.comment_count ?? 0);
 
+  const plannedInputRef = useRef<HTMLInputElement>(null);
+  const completedInputRef = useRef<HTMLInputElement>(null);
+
   const isFavoritedByMe = item.favorited_by?.includes(activeUser.id) ?? false;
   const favoriteCount = item.favorited_by?.length ?? 0;
 
-  const completedDate = item.completed_at
-    ? new Date(item.completed_at).toLocaleDateString("th-TH", { month: "short", day: "numeric", year: "numeric" })
-    : null;
+  const plannedDateStr = item.planned_date ? toInputDate(item.planned_date.toString()) : "";
+  const completedDateStr = item.completed_at ? toInputDate(item.completed_at.toString()) : "";
 
   const handleEditSave = async () => {
     const trimmed = editTitle.trim();
@@ -50,22 +66,16 @@ export default function ChecklistItemRow({
     setIsEditing(false);
   };
 
-  const handleEditCancel = () => {
-    setEditTitle(item.title);
-    setIsEditing(false);
-  };
-
   const loadComments = async () => {
     if (commentsLoaded) return;
     const res = await fetch(`/api/comments?item_id=${item.id}`);
-    const data = await res.json();
-    setComments(data);
+    setComments(await res.json());
     setCommentsLoaded(true);
   };
 
   const handleToggleComments = async () => {
     if (!showComments) await loadComments();
-    setShowComments((prev) => !prev);
+    setShowComments(p => !p);
   };
 
   const handleAddComment = async () => {
@@ -80,8 +90,8 @@ export default function ChecklistItemRow({
     const comment = await res.json();
     comment.user_nickname = activeUser.nickname;
     comment.user_avatar = activeUser.avatar_url;
-    setComments((prev) => [...prev, comment]);
-    setLocalCommentCount((n) => n + 1);
+    setComments(p => [...p, comment]);
+    setLocalCommentCount(n => n + 1);
     setNewComment("");
     setAddingComment(false);
   };
@@ -92,24 +102,18 @@ export default function ChecklistItemRow({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: commentId }),
     });
-    setComments((prev) => prev.filter((c) => c.id !== commentId));
-    setLocalCommentCount((n) => n - 1);
+    setComments(p => p.filter(c => c.id !== commentId));
+    setLocalCommentCount(n => n - 1);
   };
 
   return (
-    <div
-      className={`p-3 rounded-2xl transition-all ${
-        item.is_completed ? "opacity-60 bg-purple-50/40" : ""
-      }`}
-    >
+    <div className={`p-3 rounded-2xl transition-all ${item.is_completed ? "opacity-60 bg-purple-50/40" : ""}`}>
       <div className="flex items-start gap-3">
         {/* Checkbox */}
         <button
           onClick={() => onToggle(item)}
-          className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
-            item.is_completed
-              ? "bg-purple-400 border-purple-400"
-              : "border-purple-300 hover:border-purple-400 active:scale-90"
+          className={`mt-0.5 flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all active:scale-90 ${
+            item.is_completed ? "bg-purple-400 border-purple-400" : "border-purple-300 hover:border-purple-400"
           }`}
         >
           {item.is_completed && (
@@ -121,30 +125,20 @@ export default function ChecklistItemRow({
 
         {/* Content */}
         <div className="flex-1 min-w-0">
-          {/* Title row */}
+          {/* Title */}
           {isEditing ? (
             <div className="flex items-center gap-2">
               <input
                 value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleEditSave();
-                  if (e.key === "Escape") handleEditCancel();
-                }}
+                onChange={e => setEditTitle(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") handleEditSave(); if (e.key === "Escape") { setEditTitle(item.title); setIsEditing(false); } }}
                 className="flex-1 text-purple-800 border border-purple-300 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white"
                 autoFocus
               />
-              <button
-                onClick={handleEditSave}
-                disabled={saving}
-                className="p-1.5 rounded-lg text-green-500 hover:bg-green-50 active:scale-90 transition-all"
-              >
+              <button onClick={handleEditSave} disabled={saving} className="p-1.5 rounded-lg text-green-500 hover:bg-green-50 active:scale-90">
                 <Check className="w-4 h-4" />
               </button>
-              <button
-                onClick={handleEditCancel}
-                className="p-1.5 rounded-lg text-purple-400 hover:bg-purple-50 active:scale-90 transition-all"
-              >
+              <button onClick={() => { setEditTitle(item.title); setIsEditing(false); }} className="p-1.5 rounded-lg text-purple-400 hover:bg-purple-50 active:scale-90">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -162,47 +156,72 @@ export default function ChecklistItemRow({
                 <span className="text-xs text-purple-500">{item.created_by_nickname}</span>
               </div>
             )}
+
+            {/* Planned date badge */}
+            {item.planned_date && (
+              <button
+                onClick={() => plannedInputRef.current?.showPicker?.() ?? plannedInputRef.current?.click()}
+                className="flex items-center gap-1 bg-purple-100 rounded-full px-2 py-0.5 hover:bg-purple-200 transition-colors"
+              >
+                <CalendarDays className="w-3 h-3 text-purple-400" />
+                <span className="text-xs text-purple-500">{formatDate(plannedDateStr)}</span>
+              </button>
+            )}
+
+            {/* Completed date badge with edit */}
             {item.is_completed && item.completed_by_nickname && (
-              <div className="flex items-center gap-1 bg-purple-100 rounded-full px-2 py-0.5">
+              <button
+                onClick={() => completedInputRef.current?.showPicker?.() ?? completedInputRef.current?.click()}
+                className="flex items-center gap-1 bg-purple-100 rounded-full px-2 py-0.5 hover:bg-purple-200 transition-colors"
+              >
                 <span className="text-xs text-purple-500">
-                  ✓ {item.completed_by_nickname} · {completedDate}
+                  ✓ {item.completed_by_nickname}
+                  {completedDateStr && ` · ${formatDate(completedDateStr)}`}
                 </span>
-              </div>
+                <Pencil className="w-2.5 h-2.5 text-purple-400" />
+              </button>
             )}
           </div>
+
+          {/* Hidden date inputs */}
+          <input
+            ref={plannedInputRef}
+            type="date"
+            value={plannedDateStr}
+            onChange={e => onUpdatePlannedDate(item.id, e.target.value || null)}
+            className="sr-only"
+          />
+          <input
+            ref={completedInputRef}
+            type="date"
+            value={completedDateStr}
+            onChange={e => e.target.value && onUpdateCompletedAt(item.id, e.target.value)}
+            className="sr-only"
+          />
 
           {/* Memory photo */}
           {item.is_completed && item.memory_image_url && (
             <div className="mt-1.5">
-              <button
-                onClick={() => setShowPhoto(!showPhoto)}
-                className="text-xs text-purple-400 flex items-center gap-1 hover:text-purple-600 transition-colors"
-              >
+              <button onClick={() => setShowPhoto(!showPhoto)} className="text-xs text-purple-400 flex items-center gap-1 hover:text-purple-600 transition-colors">
                 <ImageIcon className="w-3 h-3" />
                 {showPhoto ? "Hide photo" : "View photo"}
               </button>
               {showPhoto && (
                 <div className="mt-2 rounded-2xl overflow-hidden border border-purple-100">
-                  <img
-                    src={item.memory_image_url}
-                    alt="memory"
-                    className="w-full max-h-48 object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                  />
+                  <img src={item.memory_image_url} alt="memory" className="w-full max-h-48 object-cover"
+                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                 </div>
               )}
             </div>
           )}
 
-          {/* Action row — always visible */}
+          {/* Action row */}
           <div className="flex items-center gap-1 mt-2.5">
             {/* Favorite */}
             <button
               onClick={() => onFavorite(item.id)}
               className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all active:scale-90 ${
-                isFavoritedByMe
-                  ? "text-pink-500 bg-pink-50"
-                  : "text-purple-300 hover:text-pink-400 hover:bg-pink-50"
+                isFavoritedByMe ? "text-pink-500 bg-pink-50" : "text-purple-300 hover:text-pink-400 hover:bg-pink-50"
               }`}
             >
               <Heart className={`w-3.5 h-3.5 ${isFavoritedByMe ? "fill-current" : ""}`} />
@@ -213,16 +232,26 @@ export default function ChecklistItemRow({
             <button
               onClick={handleToggleComments}
               className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all active:scale-90 ${
-                showComments
-                  ? "text-purple-600 bg-purple-100"
-                  : "text-purple-300 hover:text-purple-500 hover:bg-purple-50"
+                showComments ? "text-purple-600 bg-purple-100" : "text-purple-300 hover:text-purple-500 hover:bg-purple-50"
               }`}
             >
               <MessageCircle className="w-3.5 h-3.5" />
               {localCommentCount > 0 && <span className="text-xs font-medium">{localCommentCount}</span>}
             </button>
 
-            {/* Edit — only for incomplete items */}
+            {/* Plan date */}
+            {!item.is_completed && (
+              <button
+                onClick={() => plannedInputRef.current?.showPicker?.() ?? plannedInputRef.current?.click()}
+                className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all active:scale-90 ${
+                  item.planned_date ? "text-purple-500 bg-purple-100" : "text-purple-300 hover:text-purple-500 hover:bg-purple-50"
+                }`}
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {/* Edit title */}
             {!item.is_completed && !isEditing && (
               <button
                 onClick={() => { setEditTitle(item.title); setIsEditing(true); }}
@@ -241,24 +270,20 @@ export default function ChecklistItemRow({
             </button>
           </div>
 
-          {/* Comments section */}
+          {/* Comments */}
           {showComments && (
             <div className="mt-3 border-t border-purple-100 pt-3 space-y-2.5">
-              {comments.length === 0 && !addingComment && (
+              {comments.length === 0 && (
                 <p className="text-xs text-purple-300 text-center py-1">No comments yet — be the first!</p>
               )}
-
-              {comments.map((comment) => (
-                <div key={comment.id} className="flex items-start gap-2 group/comment">
+              {comments.map(comment => (
+                <div key={comment.id} className="flex items-start gap-2">
                   <Avatar url={comment.user_avatar ?? null} nickname={comment.user_nickname || "?"} size="sm" />
                   <div className="flex-1 bg-purple-50 rounded-2xl rounded-tl-sm px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-semibold text-purple-600">{comment.user_nickname}</span>
                       {comment.user_id === activeUser.id && (
-                        <button
-                          onClick={() => handleDeleteComment(comment.id)}
-                          className="text-red-200 hover:text-red-400 transition-colors flex-shrink-0"
-                        >
+                        <button onClick={() => handleDeleteComment(comment.id)} className="text-red-200 hover:text-red-400 flex-shrink-0">
                           <X className="w-3 h-3" />
                         </button>
                       )}
@@ -267,22 +292,20 @@ export default function ChecklistItemRow({
                   </div>
                 </div>
               ))}
-
-              {/* Add comment input */}
               <div className="flex items-center gap-2 pt-1">
                 <Avatar url={activeUser.avatar_url} nickname={activeUser.nickname} size="sm" />
                 <div className="flex-1 flex gap-2">
                   <input
                     value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleAddComment()}
+                    onChange={e => setNewComment(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleAddComment()}
                     placeholder="Write a comment..."
                     className="flex-1 px-3 py-2 rounded-full border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white text-purple-800 text-xs"
                   />
                   <button
                     onClick={handleAddComment}
                     disabled={addingComment || !newComment.trim()}
-                    className="w-8 h-8 rounded-full bg-purple-400 text-white flex items-center justify-center hover:bg-purple-500 transition-colors disabled:opacity-40 flex-shrink-0 active:scale-90"
+                    className="w-8 h-8 rounded-full bg-purple-400 text-white flex items-center justify-center hover:bg-purple-500 disabled:opacity-40 flex-shrink-0 active:scale-90"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />

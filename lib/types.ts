@@ -30,6 +30,7 @@ export interface ChecklistItem {
   completed_by_avatar?: string;
   favorited_by: number[];
   comment_count: number;
+  planned_date?: string | null;
 }
 
 export interface ItemComment {

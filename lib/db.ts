@@ -41,6 +41,7 @@ export async function initDb() {
   `;
 
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS tagline TEXT`;
+  await sql`ALTER TABLE checklist_items ADD COLUMN IF NOT EXISTS planned_date DATE`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS item_favorites (

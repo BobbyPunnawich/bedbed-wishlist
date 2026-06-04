@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, Shuffle, ChevronDown, ChevronUp, X } from "lucide-react";
+import { Plus, Trash2, Sparkles, ChevronDown, ChevronUp, X, RefreshCw } from "lucide-react";
 import { Category, ChecklistItem, User } from "@/lib/types";
 import ChecklistItemRow from "./ChecklistItemRow";
 
@@ -15,6 +15,8 @@ interface CategoryCardProps {
   onDeleteCategory: (id: number) => void;
   onEditItem: (id: number, title: string) => Promise<void>;
   onFavoriteItem: (itemId: number) => Promise<void>;
+  onUpdatePlannedDate: (id: number, date: string | null) => Promise<void>;
+  onUpdateCompletedAt: (id: number, date: string) => Promise<void>;
 }
 
 export default function CategoryCard({
@@ -27,6 +29,8 @@ export default function CategoryCard({
   onDeleteCategory,
   onEditItem,
   onFavoriteItem,
+  onUpdatePlannedDate,
+  onUpdateCompletedAt,
 }: CategoryCardProps) {
   const [newTitle, setNewTitle] = useState("");
   const [adding, setAdding] = useState(false);
@@ -75,11 +79,11 @@ export default function CategoryCard({
           {pending.length > 0 && (
             <button
               onClick={spinRandom}
-              title="Pick random"
+              title="Suggest something"
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-100 text-purple-500 hover:bg-purple-200 active:scale-95 transition-all"
             >
-              <Shuffle className="w-3.5 h-3.5" />
-              <span className="text-xs font-semibold">Random</span>
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="text-xs font-semibold">Suggest</span>
             </button>
           )}
           <button
@@ -98,16 +102,23 @@ export default function CategoryCard({
         </div>
       </div>
 
-      {/* Random pick result */}
+      {/* Suggestion result */}
       {spinResult && (
-        <div className="mx-4 mt-3 p-3 bg-purple-400 rounded-2xl text-white flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span>🎲</span>
-            <span className="font-medium text-sm">{spinResult.emoji} {spinResult.title}</span>
+        <div className="mx-4 mt-3 p-4 bg-purple-400 rounded-2xl text-white space-y-2">
+          <p className="text-xs font-semibold text-purple-200 uppercase tracking-wider">How about...</p>
+          <p className="font-semibold leading-snug">{spinResult.emoji} {spinResult.title}</p>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={spinRandom}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500 hover:bg-purple-600 text-white text-xs font-semibold active:scale-95 transition-all"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Try another
+            </button>
+            <button onClick={() => setSpinResult(null)} className="px-3 py-1.5 rounded-xl text-purple-200 hover:text-white text-xs font-semibold active:scale-95 transition-all">
+              Dismiss
+            </button>
           </div>
-          <button onClick={() => setSpinResult(null)} className="text-purple-200 hover:text-white p-1">
-            <X className="w-4 h-4" />
-          </button>
         </div>
       )}
 
@@ -155,6 +166,8 @@ export default function CategoryCard({
               onDelete={onDeleteItem}
               onEdit={onEditItem}
               onFavorite={onFavoriteItem}
+              onUpdatePlannedDate={onUpdatePlannedDate}
+              onUpdateCompletedAt={onUpdateCompletedAt}
             />
           ))}
 
