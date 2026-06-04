@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Settings, ListChecks, X, CalendarDays } from "lucide-react";
 import { User, Category, ChecklistItem } from "@/lib/types";
 import Avatar from "@/components/Avatar";
@@ -20,7 +20,6 @@ export default function Home() {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [activeUserId, setActiveUserId] = useState<number>(1);
   const [loading, setLoading] = useState(true);
-  const [dbReady, setDbReady] = useState(false);
   const [currentPage, setCurrentPage] = useState<Page>("checklist");
 
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -31,46 +30,96 @@ export default function Home() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryEmoji, setNewCategoryEmoji] = useState("✨");
   const [addingCategory, setAddingCategory] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const fireConfetti = useConfetti();
+  const firstLoad = useRef(true);
+  // Track last mutation time to skip polling immediately after a write
+  const lastMutationRef = useRef(0);
 
   const activeUser = users.find((u) => u.id === activeUserId) || users[0];
   const mimiUser = users[0];
   const bedUser = users[1];
 
-  useEffect(() => {
-    (async () => {
-      try { await fetch("/api/init", { method: "POST" }); } catch {}
-      setDbReady(true);
-    })();
+  const applyData = useCallback((usersData: User[], catsData: Category[], itemsData: ChecklistItem[]) => {
+    setUsers(usersData);
+    setCategories(catsData);
+    setItems(itemsData);
+    if (firstLoad.current && usersData.length > 0) {
+      setActiveUserId(usersData[0].id);
+      firstLoad.current = false;
+    }
+    try {
+      localStorage.setItem("wl-cache", JSON.stringify({ users: usersData, categories: catsData, items: itemsData }));
+    } catch {}
   }, []);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    else setSyncing(true);
     try {
       const [usersRes, catsRes, itemsRes] = await Promise.all([
         fetch("/api/users"), fetch("/api/categories"), fetch("/api/items"),
       ]);
+      if (!usersRes.ok || !catsRes.ok || !itemsRes.ok) throw new Error("fetch failed");
       const [usersData, catsData, itemsData] = await Promise.all([
         usersRes.json(), catsRes.json(), itemsRes.json(),
       ]);
-      setUsers(usersData);
-      setCategories(catsData);
-      setItems(itemsData);
-      if (usersData.length > 0) setActiveUserId(usersData[0].id);
+      applyData(usersData, catsData, itemsData);
     } catch (err) {
-      console.error("Failed to load data:", err);
+      if (!silent) console.error("Failed to load data:", err);
     } finally {
       setLoading(false);
+      setSyncing(false);
     }
-  }, []);
+  }, [applyData]);
 
-  useEffect(() => { if (dbReady) loadData(); }, [dbReady, loadData]);
+  // Boot: show cached data instantly, then init DB + fetch fresh in parallel
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("wl-cache");
+      if (raw) {
+        const { users: u, categories: c, items: i } = JSON.parse(raw);
+        setUsers(u); setCategories(c); setItems(i);
+        if (u.length > 0) setActiveUserId(u[0].id);
+        firstLoad.current = false;
+        setLoading(false);
+      }
+    } catch {}
+
+    // Fire init and first real fetch in parallel
+    fetch("/api/init", { method: "POST" }).catch(() => {});
+    // Small delay so init has a head-start on first-ever visit
+    setTimeout(() => loadData(/* silent= */ !firstLoad.current), 300);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Poll every 5 s (skip if we just mutated to avoid racing optimistic updates)
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (Date.now() - lastMutationRef.current < 3000) return;
+      if (document.visibilityState !== "visible") return;
+      loadData(true);
+    }, 5000);
+    return () => clearInterval(id);
+  }, [loadData]);
+
+  // Refresh immediately when tab becomes visible again
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === "visible") loadData(true);
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [loadData]);
 
   const totalPlanned = items.filter((i) => !i.is_completed).length;
   const totalCompleted = items.filter((i) => i.is_completed).length;
 
+  const stamp = () => { lastMutationRef.current = Date.now(); };
+
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return;
+    stamp();
     setAddingCategory(true);
     const res = await fetch("/api/categories", {
       method: "POST",
@@ -87,12 +136,14 @@ export default function Home() {
 
   const handleDeleteCategory = async (id: number) => {
     if (!confirm("Delete this category and all its activities?")) return;
+    stamp();
     await fetch("/api/categories", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
     setCategories((prev) => prev.filter((c) => c.id !== id));
     setItems((prev) => prev.filter((i) => i.category_id !== id));
   };
 
   const handleAddItem = async (categoryId: number, title: string, emoji: string) => {
+    stamp();
     const res = await fetch("/api/items", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -115,6 +166,7 @@ export default function Home() {
   };
 
   const completeToggle = async (item: ChecklistItem, completing: boolean, memoryUrl: string | null) => {
+    stamp();
     const res = await fetch(`/api/items/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -136,11 +188,13 @@ export default function Home() {
   };
 
   const handleDeleteItem = async (id: number) => {
+    stamp();
     await fetch("/api/items", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
     setItems((prev) => prev.filter((i) => i.id !== id));
   };
 
   const handleEditItem = async (id: number, title: string) => {
+    stamp();
     const res = await fetch(`/api/items/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }),
     });
@@ -166,6 +220,7 @@ export default function Home() {
   };
 
   const handleUpdatePlannedDate = async (id: number, date: string | null) => {
+    stamp();
     const res = await fetch(`/api/items/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planned_date: date }),
     });
@@ -174,6 +229,7 @@ export default function Home() {
   };
 
   const handleUpdateCompletedAt = async (id: number, date: string) => {
+    stamp();
     const res = await fetch(`/api/items/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ completed_at: date }),
     });
@@ -211,7 +267,12 @@ export default function Home() {
             <div className="w-8 h-8 bg-purple-400 rounded-2xl flex items-center justify-center">
               <ListChecks className="w-4 h-4 text-white" />
             </div>
-            <h1 className="font-semibold text-purple-800">Checklist</h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="font-semibold text-purple-800">Checklist</h1>
+              {syncing && (
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-300 animate-pulse" />
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -347,9 +408,9 @@ export default function Home() {
 
           <button
             onClick={() => setShowNewCategory(true)}
-            className="flex-1 flex flex-col items-center gap-1 py-3 text-purple-400 hover:text-purple-600 transition-colors"
+            className="flex-1 flex flex-col items-center gap-1 py-2.5 transition-colors"
           >
-            <div className="w-9 h-9 -mt-5 rounded-full bg-purple-400 flex items-center justify-center shadow-md hover:bg-purple-500 transition-colors active:scale-95">
+            <div className="w-10 h-10 rounded-2xl bg-purple-400 flex items-center justify-center shadow-sm active:scale-95 transition-all">
               <Plus className="w-5 h-5 text-white" />
             </div>
             <span className="text-xs font-semibold text-purple-400">New</span>
