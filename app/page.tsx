@@ -211,10 +211,7 @@ export default function Home() {
             <div className="w-8 h-8 bg-purple-400 rounded-2xl flex items-center justify-center">
               <ListChecks className="w-4 h-4 text-white" />
             </div>
-            <div>
-              <h1 className="font-semibold text-purple-800 leading-none">Checklist</h1>
-              <p className="text-xs text-purple-400 leading-none">shared with love 💜</p>
-            </div>
+            <h1 className="font-semibold text-purple-800">Checklist</h1>
           </div>
 
           <div className="flex items-center gap-2">
@@ -347,6 +344,17 @@ export default function Home() {
             <ListChecks className="w-5 h-5" />
             <span className="text-xs font-semibold">Checklist</span>
           </button>
+
+          <button
+            onClick={() => setShowNewCategory(true)}
+            className="flex-1 flex flex-col items-center gap-1 py-3 text-purple-400 hover:text-purple-600 transition-colors"
+          >
+            <div className="w-9 h-9 -mt-5 rounded-full bg-purple-400 flex items-center justify-center shadow-md hover:bg-purple-500 transition-colors active:scale-95">
+              <Plus className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-xs font-semibold text-purple-400">New</span>
+          </button>
+
           <button
             onClick={() => setCurrentPage("calendar")}
             className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
@@ -358,17 +366,6 @@ export default function Home() {
           </button>
         </div>
       </nav>
-
-      {/* FAB — checklist page only, above bottom nav */}
-      {currentPage === "checklist" && (
-        <button
-          onClick={() => setShowNewCategory(true)}
-          className="fixed bottom-[72px] right-4 flex items-center gap-2 bg-purple-400 text-white px-5 py-3.5 rounded-full shadow-lg hover:bg-purple-500 transition-all hover:scale-105 active:scale-95 z-20"
-        >
-          <Plus className="w-5 h-5" />
-          <span className="font-semibold">New Category</span>
-        </button>
-      )}
 
       {/* New category bottom sheet */}
       {showNewCategory && (
