@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Settings, ListChecks, X, CalendarDays } from "lucide-react";
+import { Plus, Settings, ListChecks, X, CalendarDays, RefreshCw } from "lucide-react";
 import { User, Category, ChecklistItem } from "@/lib/types";
 import Avatar from "@/components/Avatar";
 import CategoryCard from "@/components/CategoryCard";
@@ -93,17 +93,7 @@ export default function Home() {
     setTimeout(() => loadData(/* silent= */ !firstLoad.current), 300);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Poll every 5 s (skip if we just mutated to avoid racing optimistic updates)
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (Date.now() - lastMutationRef.current < 3000) return;
-      if (document.visibilityState !== "visible") return;
-      loadData(true);
-    }, 5000);
-    return () => clearInterval(id);
-  }, [loadData]);
-
-  // Refresh immediately when tab becomes visible again
+  // Refresh when switching back to the tab (free — only fires on user action)
   useEffect(() => {
     const handler = () => {
       if (document.visibilityState === "visible") loadData(true);
@@ -276,6 +266,13 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => loadData(true)}
+              className={`p-2 rounded-full hover:bg-purple-50 text-purple-300 hover:text-purple-500 transition-colors ${syncing ? "animate-spin text-purple-400" : ""}`}
+              title="Refresh"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
             {users.map((user) => (
               <button
                 key={user.id}
